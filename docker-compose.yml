@@ -1,0 +1,13 @@
+version: '3'
+services:
+  securechat:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - FOUNDER_KEY=${FOUNDER_KEY}
+      - SERVER_NAME=${SERVER_NAME}
+      - PORT=3000
+    restart: unless-stopped
