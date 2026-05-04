@@ -15,6 +15,19 @@ function getDb() {
 
     const schema = fs.readFileSync(SCHEMA_PATH, 'utf8');
     db.exec(schema);
+
+    // Migrations — safe to run every time
+    const migrations = [
+      "ALTER TABLE join_requests ADD COLUMN requester_ip TEXT"
+    ];
+
+    for (const migration of migrations) {
+      try {
+        db.prepare(migration).run();
+      } catch (e) {
+        // Column already exists — ignore
+      }
+    }
   }
   return db;
 }

@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS join_requests (
   requester_id TEXT NOT NULL,
   requester_name TEXT NOT NULL,
   requester_public_key TEXT NOT NULL,
+  requester_ip TEXT,
   requested_at INTEGER NOT NULL,
   expires_at INTEGER NOT NULL,
   approvals TEXT DEFAULT '[]',
@@ -29,7 +30,6 @@ CREATE TABLE IF NOT EXISTS server_info (
   value TEXT NOT NULL
 );
 
--- Tracks IPs that have submitted a join request, cleared when request resolves
 CREATE TABLE IF NOT EXISTS ip_cooldowns (
   ip TEXT PRIMARY KEY,
   requested_at INTEGER NOT NULL,
