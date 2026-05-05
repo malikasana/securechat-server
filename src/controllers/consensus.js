@@ -23,18 +23,19 @@ function createJoinRequest({ id, display_name, public_key, ip }) {
     return { success: false, error: 'Missing required fields' };
   }
 
-  // Check if requests are locked by founder
   if (isRequestsLocked()) {
     return { success: false, error: 'Join requests are currently closed by the server admin' };
   }
 
-  // Check if already a member
   const existing = db.prepare('SELECT id FROM members WHERE id = ? AND status = ?').get(id, 'active');
   if (existing) {
     return { success: false, error: 'Already a member' };
   }
 
-  // Check if already has a pending request by this requester_id
+  // Check display name uniqueness
+  const nameTaken = db.prepare('SELECT id FROM members WHERE display_name = ? AND status = ?').get(display_name, 'active');
+  if (nameTaken) return { success: false, error: 'Display name already taken.' };
+
   const pendingById = db.prepare(
     "SELECT id FROM join_requests WHERE requester_id = ? AND status = 'pending'"
   ).get(id);
@@ -42,7 +43,6 @@ function createJoinRequest({ id, display_name, public_key, ip }) {
     return { success: false, error: 'Already has a pending join request', request_id: pendingById.id };
   }
 
-  // IP cooldown — same IP cannot submit while a previous request from it is still pending
   if (ip) {
     const now = Date.now();
     const ipRecord = db.prepare('SELECT * FROM ip_cooldowns WHERE ip = ?').get(ip);
@@ -123,7 +123,6 @@ function processApproval(requestId, memberId, approved, broadcastFn) {
       "UPDATE join_requests SET rejections = ?, status = 'rejected' WHERE id = ?"
     ).run(JSON.stringify(rejections), requestId);
 
-    // Free IP immediately on rejection so they can retry
     _releaseIp(request.requester_ip);
 
     broadcastFn(null, {
