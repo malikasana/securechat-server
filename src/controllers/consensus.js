@@ -16,7 +16,7 @@ function setRequestsLocked(locked) {
   );
 }
 
-function createJoinRequest({ id, display_name, public_key, ip }) {
+function createJoinRequest({ id, display_name, public_key, curve25519_public_key, ip }) {
   const db = getDb();
 
   if (!id || !display_name || !public_key) {
@@ -32,7 +32,6 @@ function createJoinRequest({ id, display_name, public_key, ip }) {
     return { success: false, error: 'Already a member' };
   }
 
-  // Check display name uniqueness
   const nameTaken = db.prepare('SELECT id FROM members WHERE display_name = ? AND status = ?').get(display_name, 'active');
   if (nameTaken) return { success: false, error: 'Display name already taken.' };
 
@@ -64,9 +63,9 @@ function createJoinRequest({ id, display_name, public_key, ip }) {
 
   db.prepare(
     `INSERT INTO join_requests
-      (id, requester_id, requester_name, requester_public_key, requester_ip, requested_at, expires_at, approvals, rejections, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(requestId, id, display_name, public_key, ip || null, now, expiresAt, '[]', '[]', 'pending');
+      (id, requester_id, requester_name, requester_public_key, requester_curve25519_public_key, requester_ip, requested_at, expires_at, approvals, rejections, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(requestId, id, display_name, public_key, curve25519_public_key || '', ip || null, now, expiresAt, '[]', '[]', 'pending');
 
   if (ip) {
     db.prepare('INSERT OR REPLACE INTO ip_cooldowns (ip, requested_at, expires_at) VALUES (?, ?, ?)').run(
@@ -144,8 +143,8 @@ function processApproval(requestId, memberId, approved, broadcastFn) {
 
     const now = Date.now();
     db.prepare(
-      'INSERT INTO members (id, display_name, public_key, joined_at, status) VALUES (?, ?, ?, ?, ?)'
-    ).run(request.requester_id, request.requester_name, request.requester_public_key, now, 'active');
+      'INSERT INTO members (id, display_name, public_key, curve25519_public_key, joined_at, status) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(request.requester_id, request.requester_name, request.requester_public_key, request.requester_curve25519_public_key || '', now, 'active');
 
     const general = db.prepare("SELECT * FROM channels WHERE id = 'general'").get();
     if (general) {
@@ -173,7 +172,8 @@ function processApproval(requestId, memberId, approved, broadcastFn) {
       payload: {
         member_id: request.requester_id,
         display_name: request.requester_name,
-        public_key: request.requester_public_key
+        public_key: request.requester_public_key,
+        curve25519_public_key: request.requester_curve25519_public_key || ''
       }
     });
 

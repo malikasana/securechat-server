@@ -1,7 +1,7 @@
 const { getDb } = require('../db/database');
 const config = require('../config');
 
-function registerFounder({ id, display_name, public_key, founder_key }) {
+function registerFounder({ id, display_name, public_key, curve25519_public_key, founder_key }) {
   const db = getDb();
 
   const founderSet = db.prepare("SELECT value FROM server_info WHERE key = 'founder_set'").get();
@@ -22,15 +22,14 @@ function registerFounder({ id, display_name, public_key, founder_key }) {
     return { success: false, error: 'Member ID already exists' };
   }
 
-  // Check display name uniqueness
   const nameTaken = db.prepare('SELECT id FROM members WHERE display_name = ? AND status = ?').get(display_name, 'active');
   if (nameTaken) return { success: false, error: 'Display name already taken.' };
 
   const now = Date.now();
 
   db.prepare(
-    'INSERT INTO members (id, display_name, public_key, joined_at, status) VALUES (?, ?, ?, ?, ?)'
-  ).run(id, display_name, public_key, now, 'active');
+    'INSERT INTO members (id, display_name, public_key, curve25519_public_key, joined_at, status) VALUES (?, ?, ?, ?, ?, ?)'
+  ).run(id, display_name, public_key, curve25519_public_key || '', now, 'active');
 
   const channelId = 'general';
   const existingGeneral = db.prepare('SELECT id FROM channels WHERE id = ?').get(channelId);
@@ -54,7 +53,7 @@ function registerFounder({ id, display_name, public_key, founder_key }) {
 
 function getMembers() {
   const db = getDb();
-  return db.prepare('SELECT id, display_name, public_key, joined_at FROM members WHERE status = ?').all('active');
+  return db.prepare('SELECT id, display_name, public_key, curve25519_public_key, joined_at FROM members WHERE status = ?').all('active');
 }
 
 module.exports = { registerFounder, getMembers };

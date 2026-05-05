@@ -18,7 +18,9 @@ function getDb() {
 
     // Migrations — safe to run every time
     const migrations = [
-      "ALTER TABLE join_requests ADD COLUMN requester_ip TEXT"
+      "ALTER TABLE join_requests ADD COLUMN requester_ip TEXT",
+      "ALTER TABLE members ADD COLUMN curve25519_public_key TEXT DEFAULT ''",
+      "ALTER TABLE join_requests ADD COLUMN requester_curve25519_public_key TEXT DEFAULT ''"
     ];
 
     for (const migration of migrations) {
