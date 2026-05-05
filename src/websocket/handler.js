@@ -6,6 +6,9 @@ const { processApproval } = require('../controllers/consensus');
 // Map of memberId → WebSocket connection
 const connections = new Map();
 
+// Map of message_id → sender_id (for ACK tracking)
+const pendingAcks = new Map();
+
 function setupWebSocket(wss) {
   wss.on('connection', (ws) => {
     let authenticatedMemberId = null;
@@ -15,7 +18,7 @@ function setupWebSocket(wss) {
       try {
         data = JSON.parse(raw);
       } catch {
-        return; // Silently drop malformed messages
+        return;
       }
 
       // AUTH must be first
@@ -30,7 +33,6 @@ function setupWebSocket(wss) {
           ws.close();
           return;
         }
-
         authenticatedMemberId = member_id;
         connections.set(member_id, ws);
         return;
@@ -47,23 +49,53 @@ function setupWebSocket(wss) {
       }
 
       switch (data.type) {
+
         case EVENTS.MESSAGE: {
-          const { channel_id, encrypted_blob, sender_id } = data.payload || {};
-          if (sender_id !== authenticatedMemberId) break; // Cannot spoof sender
-          relayMessage({ channel_id, encrypted_blob, sender_id }, broadcastToChannel);
+          const { channel_id, encrypted_blob, sender_id, message_id } = data.payload || {};
+          if (sender_id !== authenticatedMemberId) break;
+
+          // Track message_id → sender for ACK resolution
+          if (message_id) {
+            pendingAcks.set(message_id, { sender_id, channel_id, timer: null });
+
+            // Auto-undelivered after 10 seconds if no ACK received
+            const timer = setTimeout(() => {
+              const pending = pendingAcks.get(message_id);
+              if (pending) {
+                pendingAcks.delete(message_id);
+                sendToMember(pending.sender_id, {
+                  type: EVENTS.UNDELIVERED,
+                  payload: { message_id }
+                });
+              }
+            }, 10000);
+
+            pendingAcks.get(message_id).timer = timer;
+          }
+
+          relayMessage({ channel_id, encrypted_blob, sender_id, message_id }, broadcastToChannel);
+          break;
+        }
+
+        case EVENTS.ACK: {
+          const { message_id } = data.payload || {};
+          if (!message_id) break;
+
+          const pending = pendingAcks.get(message_id);
+          if (pending) {
+            clearTimeout(pending.timer);
+            pendingAcks.delete(message_id);
+            sendToMember(pending.sender_id, {
+              type: EVENTS.DELIVERED,
+              payload: { message_id }
+            });
+          }
           break;
         }
 
         case EVENTS.JOIN_RESPONSE: {
-          const { request_id, approved, member_id, signature, timestamp } = data.payload || {};
+          const { request_id, approved, member_id } = data.payload || {};
           if (member_id !== authenticatedMemberId) break;
-          // Re-verify signature for this sensitive action
-          const { getDb } = require('../db/database');
-          const db = getDb();
-          const voter = db.prepare('SELECT public_key FROM members WHERE id = ?').get(member_id);
-          if (!voter) break;
-          const { verifyWsAuth: verify } = require('../middleware/verify');
-          // Already authenticated — trust the connection auth, process the approval
           processApproval(request_id, authenticatedMemberId, approved, broadcastAll);
           break;
         }

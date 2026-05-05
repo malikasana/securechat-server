@@ -6,9 +6,8 @@ const { requireAuth } = require('../middleware/verify');
 const { registerFounder, getMembers } = require('../controllers/member');
 const { createJoinRequest, getJoinRequest, processApproval, isRequestsLocked, setRequestsLocked } = require('../controllers/consensus');
 const { getChannelsForMember } = require('../controllers/message');
-const { broadcastAll } = require('../websocket/handler');
+const { broadcastAll, connections } = require('../websocket/handler');
 
-// Helper to get real IP (works behind Render's proxy)
 function getClientIp(req) {
   const forwarded = req.headers['x-forwarded-for'];
   if (forwarded) return forwarded.split(',')[0].trim();
@@ -42,10 +41,14 @@ router.post('/register', (req, res) => {
   res.json(result);
 });
 
-// GET /api/members — auth required
+// GET /api/members — auth required, includes online status
 router.get('/members', requireAuth, (req, res) => {
   const members = getMembers();
-  res.json({ members });
+  const membersWithStatus = members.map(m => ({
+    ...m,
+    online: connections.has(m.id)
+  }));
+  res.json({ members: membersWithStatus });
 });
 
 // POST /api/join-request — public
@@ -108,21 +111,31 @@ router.post('/lock-requests', requireAuth, (req, res) => {
   if (!founderRow || founderRow.value !== req.member.id) {
     return res.status(403).json({ error: 'Only the founder can lock or unlock join requests' });
   }
-
   const { locked } = req.body;
   if (typeof locked !== 'boolean') {
     return res.status(400).json({ error: 'locked must be a boolean' });
   }
-
   setRequestsLocked(locked);
+  broadcastAll(null, { type: 'REQUESTS_LOCK_CHANGED', payload: { locked } });
+  res.json({ success: true, requests_locked: locked });
+});
 
-  // Notify all online members of the change
-  broadcastAll(null, {
-    type: 'REQUESTS_LOCK_CHANGED',
-    payload: { locked }
+// DELETE /api/members/:id — clean leave
+router.delete('/members/:id', requireAuth, (req, res) => {
+  const db = getDb();
+
+  if (req.member.id !== req.params.id) {
+    return res.status(403).json({ error: 'You can only remove yourself' });
+  }
+
+  db.prepare("UPDATE members SET status = 'left' WHERE id = ?").run(req.member.id);
+
+  broadcastAll(req.member.id, {
+    type: 'MEMBER_LEFT',
+    payload: { member_id: req.member.id }
   });
 
-  res.json({ success: true, requests_locked: locked });
+  res.json({ success: true });
 });
 
 module.exports = router;
