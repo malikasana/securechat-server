@@ -104,13 +104,8 @@ router.get('/channels', requireAuth, (req, res) => {
   res.json({ channels });
 });
 
-// POST /api/lock-requests — founder only
+// POST /api/lock-requests — any authenticated member
 router.post('/lock-requests', requireAuth, (req, res) => {
-  const db = getDb();
-  const founderRow = db.prepare("SELECT value FROM server_info WHERE key = 'founder_id'").get();
-  if (!founderRow || founderRow.value !== req.member.id) {
-    return res.status(403).json({ error: 'Only the founder can lock or unlock join requests' });
-  }
   const { locked } = req.body;
   if (typeof locked !== 'boolean') {
     return res.status(400).json({ error: 'locked must be a boolean' });
