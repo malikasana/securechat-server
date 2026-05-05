@@ -6,7 +6,7 @@ const { processApproval } = require('../controllers/consensus');
 // Map of memberId → WebSocket connection
 const connections = new Map();
 
-// Map of message_id → sender_id (for ACK tracking)
+// Map of message_id → { sender_id, timer } for ACK tracking
 const pendingAcks = new Map();
 
 function setupWebSocket(wss) {
@@ -51,14 +51,20 @@ function setupWebSocket(wss) {
       switch (data.type) {
 
         case EVENTS.MESSAGE: {
-          const { channel_id, encrypted_blob, sender_id, message_id } = data.payload || {};
+          const { channel_id, encrypted_blob, sender_id, sender_curve25519_public_key, message_id, recipients } = data.payload || {};
           if (sender_id !== authenticatedMemberId) break;
 
-          // Track message_id → sender for ACK resolution
+          // ACK tracking — one ACK per recipient needed for DELIVERED
           if (message_id) {
-            pendingAcks.set(message_id, { sender_id, channel_id, timer: null });
+            const recipientCount = recipients ? recipients.filter(r => r.member_id !== sender_id).length : null;
+            pendingAcks.set(message_id, {
+              sender_id,
+              channel_id,
+              expected: recipientCount,
+              received: 0,
+              timer: null
+            });
 
-            // Auto-undelivered after 10 seconds if no ACK received
             const timer = setTimeout(() => {
               const pending = pendingAcks.get(message_id);
               if (pending) {
@@ -73,7 +79,11 @@ function setupWebSocket(wss) {
             pendingAcks.get(message_id).timer = timer;
           }
 
-          relayMessage({ channel_id, encrypted_blob, sender_id, message_id }, broadcastToChannel);
+          relayMessage(
+            { channel_id, encrypted_blob, sender_id, sender_curve25519_public_key, message_id, recipients },
+            sendToMember,
+            broadcastToChannel
+          );
           break;
         }
 
@@ -83,12 +93,16 @@ function setupWebSocket(wss) {
 
           const pending = pendingAcks.get(message_id);
           if (pending) {
-            clearTimeout(pending.timer);
-            pendingAcks.delete(message_id);
-            sendToMember(pending.sender_id, {
-              type: EVENTS.DELIVERED,
-              payload: { message_id }
-            });
+            pending.received += 1;
+            // DELIVERED when all recipients acked, or if unknown recipient count just fire on first ACK
+            if (pending.expected === null || pending.received >= pending.expected) {
+              clearTimeout(pending.timer);
+              pendingAcks.delete(message_id);
+              sendToMember(pending.sender_id, {
+                type: EVENTS.DELIVERED,
+                payload: { message_id }
+              });
+            }
           }
           break;
         }
