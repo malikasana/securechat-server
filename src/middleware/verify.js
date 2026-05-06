@@ -1,12 +1,11 @@
 const forge = require('node-forge');
 const { getDb } = require('../db/database');
 
-const TIMESTAMP_TOLERANCE_MS = 30000; // 30 seconds
+const TIMESTAMP_TOLERANCE_MS = 60000; // 60 seconds
 
 /**
  * Verifies: base64(sign(member_id + timestamp, private_key))
  * The signature payload is: member_id + timestamp (as string)
- * We extract timestamp from the decoded signature payload.
  *
  * Client sends:
  *   x-member-id: <member_id>
