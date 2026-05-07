@@ -4,6 +4,7 @@ module.exports = {
   MESSAGE: 'MESSAGE',
   JOIN_RESPONSE: 'JOIN_RESPONSE',
   ACK: 'ACK',
+  KEY_DISTRIBUTION: 'KEY_DISTRIBUTION',
   PING: 'PING',
 
   // Server → Client

@@ -54,7 +54,6 @@ function setupWebSocket(wss) {
           const { channel_id, encrypted_blob, sender_id, sender_curve25519_public_key, message_id, recipients } = data.payload || {};
           if (sender_id !== authenticatedMemberId) break;
 
-          // ACK tracking — one ACK per recipient needed for DELIVERED
           if (message_id) {
             const recipientCount = recipients ? recipients.filter(r => r.member_id !== sender_id).length : null;
             pendingAcks.set(message_id, {
@@ -94,7 +93,6 @@ function setupWebSocket(wss) {
           const pending = pendingAcks.get(message_id);
           if (pending) {
             pending.received += 1;
-            // DELIVERED when all recipients acked, or if unknown recipient count just fire on first ACK
             if (pending.expected === null || pending.received >= pending.expected) {
               clearTimeout(pending.timer);
               pendingAcks.delete(message_id);
@@ -103,6 +101,19 @@ function setupWebSocket(wss) {
                 payload: { message_id }
               });
             }
+          }
+          break;
+        }
+
+        case EVENTS.KEY_DISTRIBUTION: {
+          const { to_member_id, from_member_id, channel_id, encrypted_key_blob } = data.payload || {};
+          if (from_member_id !== authenticatedMemberId) break; // cannot spoof sender
+          const recipient = connections.get(to_member_id);
+          if (recipient && recipient.readyState === recipient.OPEN) {
+            recipient.send(JSON.stringify({
+              type: EVENTS.KEY_DISTRIBUTION,
+              payload: { from_member_id, channel_id, encrypted_key_blob }
+            }));
           }
           break;
         }
@@ -139,7 +150,6 @@ function setupWebSocket(wss) {
   });
 }
 
-/** Send to all connected members except optional excludeId */
 function broadcastAll(excludeId, message) {
   const str = JSON.stringify(message);
   for (const [memberId, conn] of connections.entries()) {
@@ -150,7 +160,6 @@ function broadcastAll(excludeId, message) {
   }
 }
 
-/** Send to all members of a channel except sender */
 function broadcastToChannel(channelId, senderId, message) {
   const { getDb } = require('../db/database');
   const db = getDb();
@@ -169,7 +178,6 @@ function broadcastToChannel(channelId, senderId, message) {
   }
 }
 
-/** Send to a specific member */
 function sendToMember(memberId, message) {
   const conn = connections.get(memberId);
   if (conn && conn.readyState === conn.OPEN) {
