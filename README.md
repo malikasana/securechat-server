@@ -540,7 +540,3 @@ The client is a separate application (mobile or desktop) that connects to this s
 The server returns member `id` (not `member_id`) in all responses. Clients should map accordingly.
 
 ---
-
-## License
-
-MIT — to be added.
